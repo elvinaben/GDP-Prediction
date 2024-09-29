@@ -1,0 +1,340 @@
+---
+title: "GDP Prediction for ASEAN Member Countries"
+author: "Group1_LC09"
+date: "2023-06-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#1. Data Description
+The data we are using consists of information from 1990 to 2021 and includes ASEAN member countries. Currently, there are 11 ASEAN member countries, but in 2021, there were only 10 member countries. Therefore, based on the years we are considering, we will only use data for the 10 countries that were already part of ASEAN in 2021.
+
+1. Countries: Character variable of each Countries 
+2. Year 	: Numerical variable of Year
+3. GDP 	: Numerical variable of GDP in the particular year (USD) [!= 0]
+4. FDI 	: Numerical variable of FDI (Foreign Direct Investment) in the particular year (USD) [!= 0]
+5. HDI	: Numerical variable of HDI (Human Development Index) in the particular year [!= 0]
+6. Portofolio_Investment: 	Numerical variable of Portfolio Investment in the particular year (USD) [!= 0]
+
+Data source:
+https://databank.worldbank.org/reports.aspx?source=2&series=BX.KLT.DINV.CD.WD&country=IDN
+https://databank.worldbank.org/reports.aspx?source=2&series=BN.KLT.PTXL.CD&country=IDN
+https://databank.worldbank.org/reports.aspx?source=2&series=NY.GDP.MKTP.CD&country=IDN
+https://countryeconomy.com/hdi/indonesia
+https://countryeconomy.com/hdi/malaysia
+https://countryeconomy.com/hdi/singapore
+https://countryeconomy.com/hdi/brunei
+https://countryeconomy.com/hdi/vietnam
+https://countryeconomy.com/hdi/laos
+https://countryeconomy.com/hdi/thailand
+https://countryeconomy.com/hdi/cambodia
+https://countryeconomy.com/hdi/philippines
+https://countryeconomy.com/hdi/myanmar
+
+#2. Load Libraries and Data
+```{r}
+library(skimr)
+library(ggplot2)
+library(reshape2)
+library(readxl)
+library(dplyr)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(MLmetrics)
+library(pROC)
+```
+```{r}
+df <- read_excel("dataset_gdp.xlsx")
+head(df)
+```
+Above display head of our dataset.
+
+#3. General Characteristic
+```{r}
+dim(df)
+```
+The dataset that we use consist of 320 rows and 6 colomns.
+
+```{r}
+head(df)
+str(df)
+```
+In this dataset, there are 6 variables.They are Countries, Year, GDP, HDI, FDI, and Portofolio_Investment.
+
+Variable Year and HDI are numerical.
+Whereas, variable Countries, GDP, FDI, and Portofolio_Investment are categorized as characters.
+Actually, all variables except the Countries variable should be numerical. So, we have to change the type of the variables GDP, FDI, and Portofolio_Investment to numeric.
+
+
+```{r}
+df$GDP <- as.numeric(df$GDP)
+df$FDI <- as.numeric(df$FDI)
+df$Portofolio_Investment <- as.numeric(df$Portofolio_Investment)
+str(df)
+```
+Right now, there are 5 numeric variable, including Year, GDP, HDI, FDI, and Portofolio_Investment. The variable "Countries" is the only variable with the data type character.
+
+```{r}
+unique(df$Countries)
+```
+Variable countries has 10 unique values.
+
+```{r}
+unique(df$Year)
+```
+Variable year has 32 unique values.
+
+```{r}
+unique(df$GDP)
+```
+Variable GDP has 318 unique values.
+
+```{r}
+unique(df$HDI)
+```
+Variable HDI has 239 unique values.
+
+```{r}
+unique(df$FDI)
+```
+Variable FDI has 318 unique values.
+
+```{r}
+unique(df$Portofolio_Investment)
+```
+Variable Portofolio_Investment has 244 unique values.
+
+#4. Data Summary
+```{r}
+BasicSummary <- function(df, dgts = 3){
+m <- ncol(df)
+varNames <- colnames(df)
+varType <- vector("character",m)
+topLevel <- vector("character",m)
+topCount <- vector("numeric",m)
+missCount <- vector("numeric",m)
+levels <- vector("numeric", m)
+for (i in 1:m){
+x <- df[,i]
+varType[i] <- class(x)
+xtab <- table(x, useNA = "ifany")
+levels[i] <- length(xtab)
+nums <- as.numeric(xtab)
+maxnum <- max(nums)
+topCount[i] <- maxnum
+maxIndex <- which.max(nums)
+lvls <- names(xtab)
+topLevel[i] <- lvls[maxIndex]
+missIndex <- which((is.na(x)) | (x == "") | (x == " ") | (x == 0))
+missCount[i] <- length(missIndex)
+}
+n <- nrow(df)
+topFrac <- round(topCount/n, digits = dgts)
+missFrac <- round(missCount/n, digits = dgts)
+summaryFrame <- data.frame(variable = varNames, type = varType,
+levels = levels, topLevel = topLevel,
+topCount = topCount, topFrac = topFrac,
+missFreq = missCount, missFrac = missFrac)
+return(summaryFrame)
+}
+```
+
+```{r}
+BasicSummary(df)
+```
+Here we can see that variable that there is 78 missing value in Portofolio_Investment variable, 3 missing value in GDP variable, and 2 missing value in FDI variable.
+
+We will replace all of the missing values with the median value.
+
+```{r}
+skim(df)
+```
+in Here we can see the missing variable, mean, standard deviation and percentile at 0,25,50,75 and 100.
+
+```{r}
+summary(df)
+```
+In GDP, the minimum value is 8.656e+08, the Q1 is 1.186e+10 , the median is 7.741e+10 , the mean is 1.518e+11 , the Q3 is 2.218e+11 , the maximum value is 1.186e+12, and the standard deviation is 2.096283e+11.
+
+In HDI, the minimum value is 0.3330 , the Q1 is 0.5573 , the median is 0.6530 , the mean is 0.6499 , the Q3 is 0.7638, the maximum value is 0.9430, and the standard deviation is 1.415552e-01.
+
+In FDI, the minimum value is 4.947e+09 , the Q1 is 3.812e+08, the median is 2.475e+09 , the mean is 2.470e+10  , the Q3 is 1.244e+10 , the maximum value is 3.941e+11, and the standard deviation is 6.407762e+10.
+
+In GDP, the minimum value is -2.607e+10 , the Q1 is - 1.001e+19 , the median is 0.000e+00, the mean is 2.550e+09  , the Q3 is 9.267e+08 , the maximum value is 1.086e+11, and the standard deviation is 1.370570e+10.
+
+#5. Data Preparation
+```{r}
+# Change missing value with the median value
+df[df == 0] <- NA
+df <- df %>% mutate_if(is.numeric, function(x) ifelse(is.na(x) | x == 0, median(x, na.rm = T), x))
+
+# Check for Missing Value 
+BasicSummary(df)
+```
+All missing value have been change to median of the particular column.
+
+#6. Check for Variable correlation
+#Heatmap
+```{r}
+library(corrplot)
+numeric_df <- subset(df, select = -c(Countries))
+df_cor_mat <- round(cor(numeric_df), 2)
+corrplot(df_cor_mat,method = "color", tl.cex = 0.5, addCoef.col = "red")
+```
+Based on the heatmap above, the top 2 variables that have the highest correlation with GDP are Year and HDI.
+
+#7. Assumption Checking
+
+## A. Check for the linearity
+```{r}
+plot(df$GDP, df$Year, main = "GDP vs. Year", xlab = "GDP", ylab = "Year")
+plot(df$GDP, df$HDI, main = "GDP vs. HDI", xlab = "GDP", ylab = "HDI")
+plot(df$GDP, df$FDI, main = "GDP vs. FDI", xlab = "GDP", ylab = "FDI")
+plot(df$GDP, df$Portofolio_Investment, main = "GDP vs. Portfolio Investment", xlab = "GDP", ylab = "Portfolio Investment")
+```
+We can see that there is a linearity of the relationship between GDP and HDI.
+
+## Check GDP Normality
+```{r}
+hist(df$GDP)
+```
+Form the data above we can see that GDP is right skewed so we would do log transformation to the data
+
+## Log Transformation
+```{r}
+log_GDP <- log(df$GDP)
+hist(log_GDP)
+df$GDP <- log_GDP
+```
+The Logged Distribution is not right skewed anymore and can be assumed to me a normal even if it's slightly skewed left
+
+#### B.  No multicollinearity
+```{r}
+reduced_data <- subset(df, select = -c(GDP, Countries))
+cor(reduced_data)
+```
+There us no strong correlation between each variables.
+
+# Model 1 Fitting
+```{r}
+# Fit the multiple linear regression model
+model1 = lm(GDP ~ Year + HDI + FDI + Portofolio_Investment, data = df)
+```
+
+## C. Multivariate Normality 
+let's look at the residuals along the normal Q-Q plot. If there is normality, then the values should follow a straight line.
+```{r}
+# Get the model residuals
+model_residuals = model1$residuals
+qqnorm(model_residuals)
+qqline(model_residuals)
+```
+Based on the QQ Plot Observation with the location of the point with the line, we can conclude that the data is slightly skewed but is still normal enough for our assumption.
+
+## D. homoscedasticity 
+```{r}
+#create fitted value vs residual plot
+plot(fitted(model1), residuals(model1))
+
+#add horizontal line at 0
+abline(h = 0, lty = 2)
+```
+We can see from the plot that the scatter tends to be randomly distributed around zero, forming a roughly horizontal band.
+Since the spread of the residuals is roughly equal at each level of the fitted values, we can conclude that the constant variance assumption is met.
+```{r}
+summary(model1)
+```
+
+#8. Splitting data 
+```{r}
+dfsub <- subset(df, select = -c(Countries))
+set.seed(100)
+n <- nrow(dfsub)
+train <- sample(n, round(0.8 * n))
+dfTrain <- dfsub[train, ]
+dfVal <- dfsub[-train, ]
+```
+We split the data into validation and train sets.
+
+#9. Fit the Linear/Logistic Regression Model
+```{r}
+LRmodel1 <- lm(GDP ~., dfTrain)
+summary(LRmodel1)
+```
+From the Summary above we can see that Year, HDI, and FDI have a P-Value < 0.05 so we would use them for our next model.
+
+# using variable which p-value < 0.05 
+```{r}
+LRmodel2 <- lm(GDP ~ HDI + FDI + Year, dfTrain)
+summary(LRmodel2)
+```
+#10. Fit the Decision Tree Models
+```{r}
+DTmodel1 <- rpart(GDP ~., dfTrain) # with all variables
+DTmodel1$variable.importance
+```
+From the Importance level we would use the Top 2 variable with the highest importance level for our next model.
+
+```{r}
+DTmodel2 <- rpart(GDP ~ FDI + HDI, dfTrain)
+DTmodel2$variable.importance
+```
+# generate plot
+```{r}
+rpart.plot(DTmodel1)
+```
+All result from this decision gives us GDP result in log(GDP). So to get the real GDP value in USD, we should do the log inverse.
+
+In R we can use exp() function to find the log inverse value.
+```{r}
+rpart.plot(DTmodel2)
+```
+
+#11. Prediction
+```{r}
+PredLR1 <- predict(LRmodel1,dfVal)
+PredLR2 <- predict(LRmodel2,dfVal)
+PredDT1 <- predict(DTmodel1,dfVal)
+PredDT2 <- predict(DTmodel2,dfVal)
+```
+
+#12. Performance (RMSE & r2Score)
+# Linear regression 1&2
+```{r}
+valLR1 <- RMSE(PredLR1, dfVal$GDP)
+sprintf("RSME of Linear Regression 1 is %s",valLR1)
+R2LR1 <- R2_Score(PredLR1, dfVal$GDP)
+sprintf("R2 Score of Linear Regression 1 is %s",R2LR1)
+```
+```{r}
+valLR2 <- RMSE(PredLR2, dfVal$GDP)
+sprintf("RSME of Linear Regression 2 is %s",valLR2)
+R2LR2 <- R2_Score(PredLR2, dfVal$GDP)
+sprintf("R2 Score of Linear Regression 2 is %s",R2LR2)
+```
+# Decision Tree 1&2
+```{r}
+valDT1 <- RMSE(PredDT1, dfVal$GDP)
+sprintf("RSME of Decision Tree 1 is %s",valDT1)
+R2DT1 <- R2_Score(PredDT1, dfVal$GDP)
+sprintf("R2 Score of Decision Tree 1 is %s",R2DT1)
+```
+
+```{r}
+valDT2 <- RMSE(PredDT2, dfVal$GDP)
+sprintf("RSME of Decision Tree 2 is %s",valDT2)
+R2DT2 <- R2_Score(PredDT2, dfVal$GDP)
+sprintf("R2 Score of Decision Tree 2 is %s",R2DT2)
+```
+#11. Conclusion
+Models with the highest R2 Score and Lowest RMSE is Decision Tree Model 1, therefore we will choose Decision Tree 1 for our prediction model for the GDP in ASEAN.
+
+```{r}
+accuracy <- 1 - mean((PredDT1 - dfVal$GDP)^2)/var(dfVal$GDP)
+print(accuracy)
+```
+The accuracy of Decision Tree Model 1 is 87%.
